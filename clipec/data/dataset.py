@@ -29,8 +29,8 @@ class ESCCDataset(Dataset):
         self.labels_df = pd.read_excel(label_file)
         
         # 获取有效文件列表（匹配标签文件中的住院号）
-        self.valid_files = []
-        self.patient_ids = []
+        self.valid_files = [] # 有效文件列表(image/nrrd文件)
+        self.patient_ids = [] # 住院号
         
         for _, row in self.labels_df.iterrows():
             patient_id = str(row['住院号'])
@@ -46,7 +46,7 @@ class ESCCDataset(Dataset):
                           'Derived AJCC T, 7th ed (2010-2015)', 
                           'Derived AJCC N, 7th ed (2010-2015)', 
                           'Derived AJCC M, 7th ed (2010-2015)', 
-                          'SEER cause-specific death classification，alive=0，dead=1']
+                          'SEER cause-specific death classification，alive=0，dead=1'] #可指定或按默认的
         
     def __len__(self):
         return len(self.valid_files)
@@ -67,7 +67,7 @@ class ESCCDataset(Dataset):
                 slice_idx = img_array.shape[0] // 2
                 slice_img = img_array[slice_idx, :, :]
             else:
-                # 可以实现其他切片选择策略
+                # TODO 可以实现其他切片选择策略
                 slice_img = img_array[0, :, :]
             
             # 数据预处理
@@ -122,7 +122,7 @@ class ESCCDataset(Dataset):
                 'patient_id': patient_id
             }
     
-def get_data_loaders(image_dir, label_file, batch_size=8, train_ratio=0.8, val_ratio=0.1, num_workers=4):
+def get_data_loaders(image_dir, label_file, batch_size=8, train_ratio=0.75, val_ratio=0.15, num_workers=4):
     """创建训练、验证和测试数据加载器"""
     
     # 定义数据变换
