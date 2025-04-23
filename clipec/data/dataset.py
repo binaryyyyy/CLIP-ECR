@@ -101,6 +101,7 @@ class ESCCDataset(Dataset):
                             labels[label_name] = value
                         else:
                             # 尝试转换为浮点数
+                            # TODO: 需要查看标签是否可以被转换为浮点数
                             labels[label_name] = float(value) if pd.notna(value) else 0.0
                     except (ValueError, TypeError):
                         # 如果无法转换为数值，设为0.0
@@ -129,7 +130,9 @@ def get_data_loaders(image_dir, label_file, batch_size=8, train_ratio=0.75, val_
     # 定义数据变换
     transform = transforms.Compose([
         # 注意: 输入已经是Tensor，所以我们不需要ToTensor变换
-        # 可以添加其他变换，如标准化等
+        # TODO：调整后的大小需要根据选择的模型进行调整
+        # TODO：标准化需要根据实际的图像进行调整！
+        # TODO：如果可以的话，使用数据增强
         transforms.Resize((224, 224)),
         transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
     ])
