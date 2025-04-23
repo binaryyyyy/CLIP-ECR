@@ -72,7 +72,8 @@ class ESCCDataset(Dataset):
             
             # 数据预处理
             # 1. 调整窗宽窗位（Windowing）- 针对CT图像的常见预处理
-            # 这里使用一个简单的线性变换，您可能需要根据实际CT图像特性进行调整
+            # 这里暂时使用一个简单的线性变换
+            # TODO: 未来需要根据运行效果进行调整
             slice_img = np.clip(slice_img, -100, 400)  # 食管癌常用窗宽窗位
             slice_img = (slice_img - (-100)) / 500  # 归一化到[0,1]
             

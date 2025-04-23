@@ -48,6 +48,7 @@ class CLIPTrainer:
         # 学习率调度器
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer,
+            # TODO: 需要根据数据集的大小调整T_max
             T_max=50,
             eta_min=1e-6
         )
