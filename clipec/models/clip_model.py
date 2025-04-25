@@ -33,10 +33,11 @@ class CLIPModel(nn.Module):
         # 初始化图像编码器
         if image_encoder_name == "resnet50":
             # 加载预训练的ResNet50，移除最后的分类层
+            # TODO: 更改使用weights参数 指定特定的权重
             self.image_encoder = resnet50(pretrained=True)
             # 修改最后的全连接层以输出所需维度的特征
-            in_features = self.image_encoder.fc.in_features
-            self.image_encoder.fc = nn.Linear(in_features, embedding_dim)
+            in_features = self.image_encoder.fc.in_features # 获取全连接层的输入维度
+            self.image_encoder.fc = nn.Linear(in_features, embedding_dim) # 修改全连接层 embedding_dim：输出维度（向量化维度）
         else:
             raise ValueError(f"不支持的图像编码器: {image_encoder_name}")
         
@@ -49,6 +50,7 @@ class CLIPModel(nn.Module):
             raise ValueError(f"不支持的文本编码器: {text_encoder_name}")
         
         # 温度参数（控制softmax的平滑度）
+        # temperature 用 nn.Parameter 包装成可训练的参数
         self.temperature = nn.Parameter(torch.ones([]) * temperature)
         
         # 初始化投影层
