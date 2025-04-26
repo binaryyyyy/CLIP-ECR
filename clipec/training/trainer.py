@@ -48,14 +48,14 @@ class CLIPTrainer:
         # 学习率调度器
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer,
-            # TODO: 需要根据数据集的大小调整T_max
-            T_max=50,
-            eta_min=1e-6
+            # TODO: 需要根据数据集的大小调整T_max 一般来说调整为epoch的一半
+            T_max=25,
+            eta_min=1e-6 # 最小学习率 防止学习率过低
         )
         
         # 保存目录
         self.save_dir = save_dir
-        os.makedirs(save_dir, exist_ok=True)
+        os.makedirs(save_dir, exist_ok=True) # exist_ok=True 如果存在 不执行创建 跳过
         
         # 训练记录
         self.train_losses = []
@@ -72,12 +72,13 @@ class CLIPTrainer:
             # 获取图像和对应标签
             images = batch['image'].to(self.device)
             
-            # 获取文本描述（这里简化，实际应用中应根据具体任务生成文本描述）
+            # 获取文本描述（这里简化，实际应用中根据具体任务生成文本描述）
             # 使用AJCC分期作为文本描述
             texts = []
             # 检查labels的类型和结构
             batch_labels = batch['labels']
             
+            # TODO: 需要修改并添加更多的标签
             # 如果是嵌套的字典，需要按以下方式处理
             if isinstance(batch_labels, dict):
                 # 处理单个批次的情况
@@ -102,12 +103,15 @@ class CLIPTrainer:
             
             # 确保有足够的文本标签
             if len(texts) != images.size(0):
+                print(f"文本数量不匹配图像数量: {len(texts)} != {images.size(0)}")
                 # 如果文本数量不匹配图像数量，复制或截断到相同长度
                 if len(texts) < images.size(0):
                     texts = texts * (images.size(0) // len(texts) + 1)
                 texts = texts[:images.size(0)]
             
             # 前向传播
+            # nn.Module 基类实现了 __call__ 方法，使得我们可以直接调用模型对象（如 model(input)）
+            # 因此，可以直接调用 self.model(images, texts) 来调用forward方法
             _, _, similarity = self.model(images, texts)
             
             # 计算损失
@@ -121,7 +125,7 @@ class CLIPTrainer:
             # 更新进度条
             current_loss = loss.item()
             total_loss += current_loss
-            progress_bar.set_postfix({"loss": f"{current_loss:.4f}"})
+            progress_bar.set_postfix({"loss": f"{current_loss:.4f}"}) # 更新进度条 在尾部显示当前损失
         
         # 更新学习率
         self.scheduler.step()
@@ -277,7 +281,7 @@ class CLIPTrainer:
         Returns:
             tuple: (预测结果, 真实标签)
         """
-        self.model.eval()
+        self.model.eval() # 设置为评估模式
         
         all_image_embeddings = []
         all_labels = []
@@ -309,6 +313,7 @@ class CLIPTrainer:
                 
                 # 处理患者ID
                 if isinstance(batch['patient_id'], list):
+                    # 将列表中的元素分开添加到all_patient_ids列表中 而不是在末尾添加一个列表对象
                     all_patient_ids.extend(batch['patient_id'])
                 else:
                     all_patient_ids.append(batch['patient_id'])
