@@ -36,10 +36,16 @@
 pip install -r requirements.txt
 ```
 
+### 开启虚拟环境
+查看环境名
+conda env list
+开启虚拟环境
+conda activate clip-ecr
+
 ### 训练模型
 
 ```bash
-python run.py --mode train --image_dir F:/1_ML/data/image --label_file F:/1_ML/data/table_info.xlsx --batch_size 8
+python run.py --mode train --image_dir F:/1_ML/data/image --label_file F:/1_ML/data/table_info.xlsx --batch_size 32 --epochs 10
 ```
 
 或直接使用默认参数：

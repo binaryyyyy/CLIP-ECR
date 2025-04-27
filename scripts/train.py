@@ -28,19 +28,19 @@ def parse_args():
     # 模型相关参数
     parser.add_argument('--image_encoder', type=str, default='resnet50',
                         help='图像编码器类型')
-    parser.add_argument('--text_encoder', type=str, default='simple',
+    parser.add_argument('--text_encoder', type=str, default='transformer',
                         help='文本编码器类型')
-    parser.add_argument('--embedding_dim', type=int, default=512,
+    parser.add_argument('--embedding_dim', type=int, default=1024,
                         help='嵌入维度')
-    parser.add_argument('--temperature', type=float, default=0.07,
+    parser.add_argument('--temperature', type=float, default=0.1,
                         help='温度系数')
     
     # 训练相关参数
-    parser.add_argument('--lr', type=float, default=1e-4,
+    parser.add_argument('--lr', type=float, default=5e-4,
                         help='学习率')
-    parser.add_argument('--weight_decay', type=float, default=1e-4,
+    parser.add_argument('--weight_decay', type=float, default=5e-5,
                         help='权重衰减')
-    parser.add_argument('--epochs', type=int, default=50,
+    parser.add_argument('--epochs', type=int, default=10,
                         help='训练轮数')
     parser.add_argument('--save_dir', type=str, default='CLIP-ECR/checkpoints',
                         help='模型保存目录')

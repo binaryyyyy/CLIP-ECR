@@ -93,7 +93,7 @@ def load_model(model, optimizer, checkpoint_path):
     return model, optimizer, epoch, loss, accuracy
 
 
-def compute_similarity_matrix(image_features, text_features, temperature=0.07):
+def compute_similarity_matrix(image_features, text_features, temperature=0.1):
     """计算图像和文本特征之间的相似度矩阵"""
     # 归一化特征向量
     image_features = image_features / image_features.norm(dim=-1, keepdim=True)

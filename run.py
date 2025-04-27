@@ -28,8 +28,15 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=8,
                         help='批量大小')
     
+    # TODO: 根据负载和效果调整
+    parser.add_argument('--embedding_dim', type=int, default=1024,
+                        help='嵌入维度')
+    
     parser.add_argument('--gpu', action='store_true',
                         help='强制使用GPU，如无可用GPU则报错')
+    
+    parser.add_argument('--epochs', type=int, default=10,
+                        help='训练轮数')
     
     return parser.parse_args()
 
@@ -58,7 +65,9 @@ def main():
             str(script_path),
             f"--image_dir={args.image_dir}",
             f"--label_file={args.label_file}",
-            f"--batch_size={args.batch_size}"
+            f"--batch_size={args.batch_size}",
+            f"--embedding_dim={args.embedding_dim}",
+            f"--epochs={args.epochs}"
         ]
         
         # 如果指定了GPU，添加GPU参数

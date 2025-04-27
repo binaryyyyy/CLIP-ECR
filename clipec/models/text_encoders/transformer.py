@@ -10,7 +10,7 @@ class TextEncoder(nn.Module):
     使用预训练的BERT模型提取文本特征，并映射到与图像特征相同的嵌入空间
     """
     
-    def __init__(self, model_name="bert-base-chinese", embedding_dim=1024, max_length=64):
+    def __init__(self, model_name="bert-base-chinese-medical", embedding_dim=1024, max_length=64):
         """
         初始化文本编码器
         
@@ -94,17 +94,42 @@ class SimpleTextEncoder(nn.Module):
         """
         super(SimpleTextEncoder, self).__init__()
         
-        # 如果没有提供词汇表，创建一个简单的默认词汇表
+        # 如果没有提供词汇表，则根据提供的表格数据创建一个默认词汇表
         if vocab is None:
+            # 从表格数据中提取所有唯一标签值
+            # 注意：假设数据加载时已进行清理（例如，去除多余空格，标准化特殊字符）
             self.vocab = {
-                "Upper": 0, "Middle": 1, "Lower": 2,  # 食管位置
-                "1": 3, "2a": 4, "2b": 5, "3a": 6, "3b": 7, "4": 8,  # AJCC分期
-                "T1": 9, "T2": 10, "T3": 11, "T4": 12,  # T分期
-                "N0": 13, "N1": 14, "N2": 15, "N3": 16,  # N分期
-                "M0": 17, "M1": 18,  # M分期
-                "alive": 19, "dead": 20,  # 生存状态
-                "<PAD>": 21
+                # Location (来自 'Primary Site - labeled')
+                "Upper": 0,
+                "Middle": 1,
+                "Lower": 2,
+                "Cervical": 3,
+                "Abdominal": 4,
+
+                # AJCC Stage Groups (来自 'Derived AJCC Stage Group, 7th ed' 和 'AJCC8th', 标准化后)
+                "1a": 5,
+                "1b": 6,
+                "2a": 7,
+                "2b": 8,
+                "3a": 9,
+                "3b": 10,
+                "3c": 11,
+                "4": 12,  # 涵盖 '4 ' 和 '4'
+                "4a": 13,
+                "4b": 14,
+
+                # T/N/M Stages 和 Survival (来自 'Derived AJCC T', 'N', 'M' 和 'SEER cause-specific death')
+                # 这些列主要使用数字字符串
+                "0": 15,  # 可代表 T0(虽然未见), N0, M0, Survival=alive
+                "1": 16,  # 可代表 T1(虽然表格中有1a/1b), N1, M1, Survival=dead
+                "2": 17,  # 可代表 T2, N2
+                "3": 18,  # 可代表 T3, N3
+                # T4 已包含在 "4": 12
+
+                # Padding Token
+                "<PAD>": 19
             }
+            # 验证：总共 5(loc) + 10(stage) + 4(num) + 1(pad) = 20 个词汇
         else:
             self.vocab = vocab
         

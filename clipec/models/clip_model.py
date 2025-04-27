@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .image_encoders.resnet import resnet50
+from .image_encoders.resnet import resnet50, resnet152
 from .text_encoders.transformer import TextEncoder, SimpleTextEncoder
 
 
@@ -17,7 +17,7 @@ class CLIPModel(nn.Module):
         image_encoder_name="resnet50", 
         text_encoder_name="simple",
         embedding_dim=1024,
-        temperature=0.07
+        temperature=0.1
     ):
         """
         初始化CLIP模型
@@ -32,9 +32,9 @@ class CLIPModel(nn.Module):
         
         # 初始化图像编码器
         if image_encoder_name == "resnet50":
-            # 加载预训练的ResNet50，移除最后的分类层
+            # 加载预训练的ResNet，移除最后的分类层
             # TODO: 更改使用weights参数 指定特定的权重
-            self.image_encoder = resnet50(pretrained=True)
+            self.image_encoder = resnet152(pretrained=True)
             # 修改最后的全连接层以输出所需维度的特征
             in_features = self.image_encoder.fc.in_features # 获取全连接层的输入维度
             self.image_encoder.fc = nn.Linear(in_features, embedding_dim) # 修改全连接层 embedding_dim：输出维度（向量化维度）
@@ -128,7 +128,8 @@ class CLIPModel(nn.Module):
         # 文本到图像的损失（每列应该最大值在对应的索引）
         text_loss = F.cross_entropy(similarity.t(), labels)
         
-        # 总损失是两者的平均
-        total_loss = (image_loss + text_loss) / 2
+        # 加权总损失，增加图像到文本的权重
+        # 修改损失权重，强调图像→文本的匹配
+        total_loss = (0.7 * image_loss + 0.3 * text_loss)
         
         return total_loss 

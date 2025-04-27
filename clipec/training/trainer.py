@@ -1,10 +1,9 @@
 import os
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
-import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 from ..utils.helpers import save_model, get_device
 
 
@@ -14,10 +13,10 @@ class CLIPTrainer:
     def __init__(
         self,
         model,
-        learning_rate=1e-4,
-        weight_decay=1e-4,
+        learning_rate=5e-4,
+        weight_decay=5e-5,
         save_dir="checkpoints",
-        force_gpu=False
+        force_gpu=True
     ):
         """
         初始化训练器
@@ -48,9 +47,9 @@ class CLIPTrainer:
         # 学习率调度器
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer,
-            # TODO: 需要根据数据集的大小调整T_max 一般来说调整为epoch的一半
-            T_max=25,
-            eta_min=1e-6 # 最小学习率 防止学习率过低
+            # 调整为与epoch数匹配，以便在整个训练过程中有更好的学习率变化
+            T_max=10,
+            eta_min=1e-5  # 提高最小学习率
         )
         
         # 保存目录
@@ -77,29 +76,46 @@ class CLIPTrainer:
             texts = []
             # 检查labels的类型和结构
             batch_labels = batch['labels']
+            # print(f"batch_labels: {batch_labels}") # 调试用
             
-            # TODO: 需要修改并添加更多的标签
-            # 如果是嵌套的字典，需要按以下方式处理
-            if isinstance(batch_labels, dict):
-                # 处理单个批次的情况
-                if 'AJCC8th' in batch_labels and batch_labels['AJCC8th'] is not None:
-                    text = f"食管癌AJCC分期{batch_labels['AJCC8th']}"
+            # TODO: 需要根据实际需求添加更多标签的处理逻辑
+            # 从 batch_labels 字典中获取 'AJCC8th' 标签列表
+            # batch_labels 的结构是 {'label_name': [label1, label2, ...]}
+            ajcc_labels = batch_labels.get('AJCC8th', [])
+            num_samples = images.size(0) # 获取批次中的样本数量
+
+            # 确保 ajcc_labels 列表长度与批次大小一致
+            # 如果标签列表长度不足，用默认值（例如空字符串）填充
+            if len(ajcc_labels) < num_samples:
+                print(
+                    f"警告: AJCC8th 标签数量 ({len(ajcc_labels)}) 少于批次大小 "
+                    f"({num_samples})。将用'未知分期'填充。"
+                )
+                ajcc_labels.extend([""] * (num_samples - len(ajcc_labels)))
+            elif len(ajcc_labels) > num_samples:
+                # 如果标签列表过长（理论上不应发生），截断
+                print(
+                    f"警告: AJCC8th 标签数量 ({len(ajcc_labels)}) 多于批次大小 "
+                    f"({num_samples})。将截断标签列表。"
+                )
+                ajcc_labels = ajcc_labels[:num_samples]
+
+            # 为批次中的每个样本生成文本描述
+            for i in range(num_samples):
+                label = ajcc_labels[i]
+                # 检查标签是否有效（非空字符串且非None/NaN）
+                # 使用 str(label) 来处理可能的数字或其他类型，并检查是否为空
+                label_str = (
+                    str(label).strip()
+                    if label is not None and pd.notna(label)
+                    else ""
+                )
+
+                if label_str:
+                    text = f"食管癌AJCC分期{label_str}"
                 else:
                     text = "未知分期"
                 texts.append(text)
-            else:
-                # 处理多个样本的情况 - 可能是字典列表、字符串或其他类型
-                for label_item in batch_labels:
-                    # 如果是字典类型
-                    if isinstance(label_item, dict):
-                        if 'AJCC8th' in label_item and label_item['AJCC8th'] is not None:
-                            text = f"食管癌AJCC分期{label_item['AJCC8th']}"
-                        else:
-                            text = "未知分期"
-                    else:
-                        # 如果不是字典，则直接使用标签作为文本
-                        text = "未知分期"
-                    texts.append(text)
             
             # 确保有足够的文本标签
             if len(texts) != images.size(0):
@@ -125,7 +141,8 @@ class CLIPTrainer:
             # 更新进度条
             current_loss = loss.item()
             total_loss += current_loss
-            progress_bar.set_postfix({"loss": f"{current_loss:.4f}"}) # 更新进度条 在尾部显示当前损失
+            # 更新进度条 在尾部显示当前损失
+            progress_bar.set_postfix({"loss": f"{current_loss:.4f}"})
         
         # 更新学习率
         self.scheduler.step()
@@ -153,7 +170,8 @@ class CLIPTrainer:
                 # 如果是嵌套的字典，需要按以下方式处理
                 if isinstance(batch_labels, dict):
                     # 处理单个批次的情况
-                    if 'AJCC8th' in batch_labels and batch_labels['AJCC8th'] is not None:
+                    if ('AJCC8th' in batch_labels
+                            and batch_labels['AJCC8th'] is not None):
                         text = f"食管癌AJCC分期{batch_labels['AJCC8th']}"
                     else:
                         text = "未知分期"
@@ -163,7 +181,8 @@ class CLIPTrainer:
                     for label_item in batch_labels:
                         # 如果是字典类型
                         if isinstance(label_item, dict):
-                            if 'AJCC8th' in label_item and label_item['AJCC8th'] is not None:
+                            if ('AJCC8th' in label_item
+                                    and label_item['AJCC8th'] is not None):
                                 text = f"食管癌AJCC分期{label_item['AJCC8th']}"
                             else:
                                 text = "未知分期"
@@ -192,7 +211,7 @@ class CLIPTrainer:
         
         return avg_loss
     
-    def train(self, train_loader, val_loader, num_epochs=50, save_best=True):
+    def train(self, train_loader, val_loader, num_epochs=10, save_best=True):
         """
         训练模型
         
@@ -207,6 +226,10 @@ class CLIPTrainer:
         """
         print(f"开始训练 - 使用设备: {self.device}")
         
+        # 添加早停计数器和阈值
+        patience = 5
+        patience_counter = 0
+        
         for epoch in range(1, num_epochs + 1):
             # 训练
             train_loss = self.train_epoch(train_loader, epoch)
@@ -214,10 +237,14 @@ class CLIPTrainer:
             
             # 验证
             val_loss = self.validate(val_loader)
-            print(f"Epoch {epoch}/{num_epochs} - Validation Loss: {val_loss:.4f}")
+            print(
+                f"Epoch {epoch}/{num_epochs} - Validation Loss: {val_loss:.4f}"
+            )
             
             # 保存模型
             if save_best and val_loss < self.best_val_loss:
+                # 如果验证损失改善，重置早停计数器
+                patience_counter = 0
                 self.best_val_loss = val_loss
                 save_path = save_model(
                     self.model,
@@ -229,9 +256,15 @@ class CLIPTrainer:
                     "best_model.pt"
                 )
                 print(f"保存最佳模型到 {save_path}")
+            elif save_best:
+                # 验证损失没有改善，增加早停计数器
+                patience_counter += 1
+                if patience_counter >= patience:
+                    print(f"验证损失连续{patience}个epoch未改善，提前停止训练")
+                    break
             
-            # 每10个epoch保存一次
-            if epoch % 10 == 0:
+            # 每5个epoch保存一次，更频繁地保存checkpoint
+            if epoch % 5 == 0:
                 save_path = save_model(
                     self.model,
                     self.optimizer,
@@ -281,7 +314,7 @@ class CLIPTrainer:
         Returns:
             tuple: (预测结果, 真实标签)
         """
-        self.model.eval() # 设置为评估模式
+        self.model.eval()  # 设置为评估模式
         
         all_image_embeddings = []
         all_labels = []

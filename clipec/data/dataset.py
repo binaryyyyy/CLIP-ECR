@@ -29,8 +29,8 @@ class ESCCDataset(Dataset):
         self.labels_df = pd.read_excel(label_file)
         
         # 获取有效文件列表（匹配标签文件中的住院号）
-        self.valid_files = [] # 有效文件列表(image/nrrd文件)
-        self.patient_ids = [] # 住院号
+        self.valid_files = []  # 有效文件列表(image/nrrd文件)
+        self.patient_ids = []  # 住院号
         
         for _, row in self.labels_df.iterrows():
             patient_id = str(row['住院号'])
@@ -42,11 +42,14 @@ class ESCCDataset(Dataset):
         print(f"找到 {len(self.valid_files)} 个有效文件")
         
         # 提取需要的标签
-        self.text_labels = text_labels or ['Primary Site - labeled', 'AJCC8th', 
-                          'Derived AJCC T, 7th ed (2010-2015)', 
-                          'Derived AJCC N, 7th ed (2010-2015)', 
-                          'Derived AJCC M, 7th ed (2010-2015)', 
-                          'SEER cause-specific death classification，alive=0，dead=1'] #可指定或按默认的
+        self.text_labels = text_labels or [
+            'Primary Site - labeled', 'AJCC8th', 
+            'Derived AJCC T, 7th ed (2010-2015)', 
+            'Derived AJCC N, 7th ed (2010-2015)', 
+            'Derived AJCC M, 7th ed (2010-2015)', 
+            'SEER cause-specific death classification，alive=0，dead=1'
+            # 可指定或按默认的
+        ]
         
     def __len__(self):
         return len(self.valid_files)
@@ -88,26 +91,23 @@ class ESCCDataset(Dataset):
                 image = self.transform(image)
                 
             # 获取标签
-            label_row = self.labels_df[self.labels_df['住院号'] == int(patient_id)]
+            label_row = self.labels_df[
+                self.labels_df['住院号'] == int(patient_id)
+            ]
+
             
             # 提取所有需要的标签
             labels = {}
             for label_name in self.text_labels:
                 if label_name in label_row.columns:
-                    # 确保值是数值类型
-                    try:
-                        value = label_row[label_name].values[0]
-                        if isinstance(value, (int, float)):
-                            labels[label_name] = value
-                        else:
-                            # 尝试转换为浮点数
-                            # TODO: 需要查看标签是否可以被转换为浮点数
-                            labels[label_name] = float(value) if pd.notna(value) else 0.0
-                    except (ValueError, TypeError):
-                        # 如果无法转换为数值，设为0.0
-                        labels[label_name] = 0.0
+                    value = label_row[label_name].values[0]
+                    # 将值转换为字符串，处理NaN情况
+                    if pd.notna(value):
+                        labels[label_name] = str(value)
+                    else:
+                        labels[label_name] = ""
                 else:
-                    labels[label_name] = 0.0
+                    labels[label_name] = ""
             
             return {
                 'image': image, 
@@ -120,11 +120,14 @@ class ESCCDataset(Dataset):
             # 返回一个空的样本
             return {
                 'image': torch.zeros((3, 512, 512)),
-                'labels': {label: None for label in self.text_labels},
+                'labels': {label: "" for label in self.text_labels},
                 'patient_id': patient_id
             }
-    
-def get_data_loaders(image_dir, label_file, batch_size=8, train_ratio=0.75, val_ratio=0.15, num_workers=4):
+
+def get_data_loaders(
+    image_dir, label_file, batch_size=8, train_ratio=0.75, 
+    val_ratio=0.15, num_workers=4
+):
     """创建训练、验证和测试数据加载器"""
     
     # 定义数据变换
@@ -146,7 +149,6 @@ def get_data_loaders(image_dir, label_file, batch_size=8, train_ratio=0.75, val_
     # 计算分割点
     train_size = int(train_ratio * dataset_size)
     val_size = int(val_ratio * dataset_size)
-    test_size = dataset_size - train_size - val_size
     
     # 分割数据集
     indices = list(range(dataset_size))
@@ -163,8 +165,17 @@ def get_data_loaders(image_dir, label_file, batch_size=8, train_ratio=0.75, val_
     test_dataset = Subset(dataset, test_indices)
     
     # 创建数据加载器
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    train_loader = DataLoader(
+        train_dataset, batch_size=batch_size, 
+        shuffle=True, num_workers=num_workers
+    )
+    val_loader = DataLoader(
+        val_dataset, batch_size=batch_size, 
+        shuffle=False, num_workers=num_workers
+    )
+    test_loader = DataLoader(
+        test_dataset, batch_size=batch_size, 
+        shuffle=False, num_workers=num_workers
+    )
     
     return train_loader, val_loader, test_loader, dataset.text_labels 
