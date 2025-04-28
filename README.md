@@ -45,7 +45,7 @@ python scripts/train.py --image_dir path/to/images --label_file path/to/labels.x
 python scripts/evaluate.py --image_dir path/to/images --label_file path/to/labels.xlsx --model_path path/to/checkpoint.pth
 
 # 评估使用所有切片训练的模型
-python scripts/evaluate.py --image_dir path/to/images --label_file path/to/labels.xlsx --model_path path/to/checkpoint.pth --slice_selection all
+python scripts/evaluate.py --image_dir C:/Users/vipuser/Downloads/image --label_file C:/Users/vipuser/Downloads/table_info.xlsx --slice_selection all
 ```
 
 ### 单个病例演示
