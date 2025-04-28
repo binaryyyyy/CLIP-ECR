@@ -10,7 +10,7 @@ class TextEncoder(nn.Module):
     使用预训练的BERT模型提取文本特征，并映射到与图像特征相同的嵌入空间
     """
     
-    def __init__(self, model_name="bert-base-chinese-medical", embedding_dim=1024, max_length=64):
+    def __init__(self, model_name="bert-base-chinese", embedding_dim=1024, max_length=64):
         """
         初始化文本编码器
         
