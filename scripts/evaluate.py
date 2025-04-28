@@ -7,6 +7,7 @@ import pandas as pd
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 import matplotlib.pyplot as plt
 import seaborn as sns
+from collections import Counter
 
 # 添加项目根目录到路径
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -30,8 +31,12 @@ def parse_args():
     parser.add_argument('--num_workers', type=int, default=4,
                         help='数据加载器工作进程数')
     parser.add_argument('--slice_selection', type=str, default='middle',
-                        choices=['middle', 'all'],
-                        help='CT切片选择方式: middle-仅中间切片, all-所有切片')
+                        choices=['middle', 'grid'],
+                        help='CT切片选择方式: middle-仅中间切片, grid-网格拼接切片')
+    parser.add_argument('--grid_size', type=int, default=16,
+                        help='grid模式下选择的切片数量')
+    parser.add_argument('--grid_layout', type=str, default='4,4',
+                        help='grid模式下的网格布局，格式为"行,列"，例如"4,4"')
     
     # 模型相关参数
     parser.add_argument('--model_path', type=str, required=True,
@@ -80,7 +85,7 @@ def plot_confusion_matrix(y_true, y_pred, classes, output_path):
     plt.close()
 
 
-def evaluate_model(model, data_loader, text_labels, output_dir, slice_selection='middle', force_gpu=False):
+def evaluate_model(model, data_loader, text_labels, output_dir, force_gpu=False):
     """评估模型性能"""
     # 创建训练器（只用于预测，不进行训练）
     trainer = CLIPTrainer(model=model, save_dir=output_dir, force_gpu=force_gpu)
@@ -92,7 +97,6 @@ def evaluate_model(model, data_loader, text_labels, output_dir, slice_selection=
     y_true = []
     y_pred = []
     patient_list = []
-    slice_indices = []
     
     for i, label_dict in enumerate(true_labels):
         # 如果有AJCC8th标签
@@ -108,19 +112,14 @@ def evaluate_model(model, data_loader, text_labels, output_dir, slice_selection=
             
             # 保存患者ID
             patient_list.append(patient_ids[i])
-            
-            # 如果是all模式，记录切片索引
-            if slice_selection == 'all' and hasattr(data_loader.dataset, 'dataset'):
-                # 对于Subset类型的dataset，需要获取原始dataset
-                orig_dataset = data_loader.dataset.dataset
-                idx = data_loader.dataset.indices[i]
-                if hasattr(orig_dataset, 'slices_info'):
-                    _, _, slice_idx = orig_dataset.slices_info[idx]
-                    slice_indices.append(slice_idx)
-                else:
-                    slice_indices.append(None)
-            else:
-                slice_indices.append(None)
+    
+    # 创建结果DataFrame
+    results_df = pd.DataFrame({
+        'patient_id': patient_list,
+        'true_label': y_true,
+        'predicted_label': y_pred,
+        'correct': [t == p for t, p in zip(y_true, y_pred)]
+    })
     
     # 计算准确率
     accuracy = accuracy_score(y_true, y_pred)
@@ -146,18 +145,6 @@ def evaluate_model(model, data_loader, text_labels, output_dir, slice_selection=
         os.path.join(output_dir, 'confusion_matrix.png')
     )
     
-    # 创建结果DataFrame
-    results_df = pd.DataFrame({
-        'patient_id': patient_list,
-        'true_label': y_true,
-        'predicted_label': y_pred,
-        'correct': [t == p for t, p in zip(y_true, y_pred)]
-    })
-    
-    # 如果是all模式，添加切片索引
-    if slice_selection == 'all':
-        results_df['slice_idx'] = slice_indices
-    
     # 保存结果到CSV
     results_path = os.path.join(output_dir, 'evaluation_results.csv')
     results_df.to_csv(results_path, index=False)
@@ -176,15 +163,28 @@ def main():
     # 创建输出目录
     os.makedirs(args.output_dir, exist_ok=True)
     
+    # 解析网格布局
+    if args.slice_selection == 'grid':
+        grid_layout = tuple(map(int, args.grid_layout.split(',')))
+        if len(grid_layout) != 2:
+            raise ValueError("grid_layout必须是形如'行,列'的字符串，例如'4,4'")
+    else:
+        grid_layout = (4, 4)  # 默认值
+    
     # 获取数据加载器
     print("加载数据...")
     print(f"切片选择模式: {args.slice_selection}")
+    if args.slice_selection == 'grid':
+        print(f"网格大小: {args.grid_size}, 网格布局: {grid_layout}")
+        
     _, _, test_loader, text_labels = get_data_loaders(
         args.image_dir,
         args.label_file,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
-        slice_selection=args.slice_selection
+        slice_selection=args.slice_selection,
+        grid_size=args.grid_size,
+        grid_layout=grid_layout
     )
     print(f"测试集: {len(test_loader.dataset)}个样本")
     
@@ -214,7 +214,6 @@ def main():
         data_loader=test_loader,
         text_labels=test_text_labels,
         output_dir=args.output_dir,
-        slice_selection=args.slice_selection,
         force_gpu=args.gpu
     )
     

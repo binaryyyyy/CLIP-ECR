@@ -25,8 +25,12 @@ def parse_args():
     parser.add_argument('--num_workers', type=int, default=4,
                         help='数据加载器工作进程数')
     parser.add_argument('--slice_selection', type=str, default='middle',
-                        choices=['middle', 'all'],
-                        help='CT切片选择方式: middle-仅中间切片, all-所有切片')
+                        choices=['middle', 'grid'],
+                        help='CT切片选择方式: middle-仅中间切片, grid-网格拼接切片')
+    parser.add_argument('--grid_size', type=int, default=16,
+                        help='grid模式下选择的切片数量')
+    parser.add_argument('--grid_layout', type=str, default='4,4',
+                        help='grid模式下的网格布局，格式为"行,列"，例如"4,4"')
     
     # 模型相关参数
     parser.add_argument('--image_encoder', type=str, default='resnet50',
@@ -67,15 +71,28 @@ def main():
     # 创建模型保存目录
     os.makedirs(args.save_dir, exist_ok=True)
     
+    # 解析网格布局
+    if args.slice_selection == 'grid':
+        grid_layout = tuple(map(int, args.grid_layout.split(',')))
+        if len(grid_layout) != 2:
+            raise ValueError("grid_layout必须是形如'行,列'的字符串，例如'4,4'")
+    else:
+        grid_layout = (4, 4)  # 默认值
+    
     # 获取数据加载器
     print("加载数据...")
     print(f"切片选择模式: {args.slice_selection}")
+    if args.slice_selection == 'grid':
+        print(f"网格大小: {args.grid_size}, 网格布局: {grid_layout}")
+    
     train_loader, val_loader, test_loader, text_labels = get_data_loaders(
         args.image_dir,
         args.label_file,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
-        slice_selection=args.slice_selection
+        slice_selection=args.slice_selection,
+        grid_size=args.grid_size,
+        grid_layout=grid_layout
     )
     print(f"数据加载完成。训练集: {len(train_loader.dataset)}个样本, "
           f"验证集: {len(val_loader.dataset)}个样本, "

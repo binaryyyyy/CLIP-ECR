@@ -5,12 +5,14 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import SimpleITK as sitk
+from collections import Counter
+import math
 
 # 添加项目根目录到路径
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from clipec.models.clip_model import CLIPModel
-from clipec.utils.helpers import set_seed, visualize_slice
+from clipec.utils.helpers import set_seed
 
 
 def parse_args():
@@ -32,10 +34,14 @@ def parse_args():
     
     # 切片选择参数
     parser.add_argument('--slice_selection', type=str, default='middle',
-                        choices=['middle', 'all', 'specific'],
-                        help='切片选择方式: middle-中间切片, all-所有切片, specific-指定切片索引')
+                        choices=['middle', 'specific', 'grid'],
+                        help='切片选择方式: middle-中间切片, specific-指定切片索引, grid-网格拼接切片')
     parser.add_argument('--slice_idx', type=int, default=None,
                         help='当slice_selection为specific时使用的切片索引')
+    parser.add_argument('--grid_size', type=int, default=16,
+                        help='grid模式下选择的切片数量')
+    parser.add_argument('--grid_layout', type=str, default='4,4',
+                        help='grid模式下的网格布局，格式为"行,列"，例如"4,4"')
     
     # 其他参数
     parser.add_argument('--output_dir', type=str, default='CLIP-ECR/demo_results',
@@ -48,13 +54,72 @@ def parse_args():
     return parser.parse_args()
 
 
-def preprocess_image(image_path, slice_selection='middle', specific_slice_idx=None):
+def create_grid_image(img_array, slice_indices, grid_layout=(4, 4)):
+    """
+    从CT体积中提取指定的切片并创建网格布局的2D图像
+    
+    Args:
+        img_array (numpy.ndarray): CT体积数据
+        slice_indices (list): 要提取的切片索引列表
+        grid_layout (tuple): 网格布局 (行, 列)
+        
+    Returns:
+        tuple: (处理后的网格图像张量, 原始网格图像数组, 切片索引列表)
+    """
+    # 确保切片索引列表的长度等于指定的网格大小
+    assert len(slice_indices) == grid_layout[0] * grid_layout[1], "切片索引数量必须等于网格大小"
+    
+    # 提取并预处理每个切片
+    processed_slices = []
+    original_slices = []
+    for idx in slice_indices:
+        # 获取切片
+        slice_img = img_array[idx, :, :]
+        original_slices.append(slice_img.copy())
+        
+        # 调整窗宽窗位并归一化
+        slice_img = np.clip(slice_img, -100, 400)  # 食管癌常用窗宽窗位
+        slice_img = (slice_img - (-100)) / 500  # 归一化到[0,1]
+        
+        processed_slices.append(slice_img)
+    
+    # 获取切片的高度和宽度
+    slice_height, slice_width = processed_slices[0].shape
+    
+    # 创建网格布局
+    rows, cols = grid_layout
+    
+    # 创建空网格
+    grid = np.zeros((rows * slice_height, cols * slice_width))
+    
+    # 填充网格
+    for i, slice_img in enumerate(processed_slices):
+        row_idx = i // cols
+        col_idx = i % cols
+        
+        # 计算在网格中的位置
+        start_row = row_idx * slice_height
+        start_col = col_idx * slice_width
+        
+        # 放置切片
+        grid[start_row:start_row+slice_height, start_col:start_col+slice_width] = slice_img
+    
+    # 将网格转换为3通道图像
+    grid_3ch = np.stack([grid] * 3, axis=0)
+    
+    # 转换为tensor
+    return torch.FloatTensor(grid_3ch), grid, slice_indices
+
+
+def preprocess_image(image_path, slice_selection='middle', specific_slice_idx=None, grid_size=16, grid_layout=(4, 4)):
     """预处理NRRD图像
     
     Args:
         image_path (str): NRRD文件路径
-        slice_selection (str): 切片选择方式，'middle', 'all' 或 'specific'
+        slice_selection (str): 切片选择方式，'middle', 'specific' 或 'grid'
         specific_slice_idx (int, optional): 当slice_selection为'specific'时的切片索引
+        grid_size (int): 'grid'模式下要选择的切片数量
+        grid_layout (tuple): 'grid'模式下的网格布局 (行, 列)
         
     Returns:
         tuple: (图像张量, 原始切片数据, 切片索引列表)
@@ -65,73 +130,109 @@ def preprocess_image(image_path, slice_selection='middle', specific_slice_idx=No
     
     # 准备变换
     from torchvision import transforms
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
-    ])
     
     # 根据切片选择方式处理
     if slice_selection == 'middle':
         # 选择中间切片
         slice_idx = img_array.shape[0] // 2
-        return process_single_slice(img_array, slice_idx, transform)
+        
+        # 获取并预处理切片
+        slice_img = img_array[slice_idx, :, :]
+        original_slice = slice_img.copy()
+        
+        # 数据预处理
+        slice_img = np.clip(slice_img, -100, 400)  # 食管癌常用窗宽窗位
+        slice_img = (slice_img - (-100)) / 500  # 归一化到[0,1]
+        
+        # 创建3通道图像
+        slice_img_3ch = np.stack([slice_img] * 3, axis=0)
+        
+        # 转为Tensor
+        image_tensor = torch.FloatTensor(slice_img_3ch)
+        
+        # 调整大小
+        transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+        ])
+        image_tensor = transform(image_tensor)
+        
+        # 添加批次维度
+        image_tensor = image_tensor.unsqueeze(0)
+        
+        return image_tensor, original_slice, slice_idx
+    
     elif slice_selection == 'specific' and specific_slice_idx is not None:
         # 选择指定切片
         if specific_slice_idx >= 0 and specific_slice_idx < img_array.shape[0]:
-            return process_single_slice(img_array, specific_slice_idx, transform)
+            # 获取并预处理切片
+            slice_img = img_array[specific_slice_idx, :, :]
+            original_slice = slice_img.copy()
+            
+            # 数据预处理
+            slice_img = np.clip(slice_img, -100, 400)  # 食管癌常用窗宽窗位
+            slice_img = (slice_img - (-100)) / 500  # 归一化到[0,1]
+            
+            # 创建3通道图像
+            slice_img_3ch = np.stack([slice_img] * 3, axis=0)
+            
+            # 转为Tensor
+            image_tensor = torch.FloatTensor(slice_img_3ch)
+            
+            # 调整大小
+            transform = transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+            ])
+            image_tensor = transform(image_tensor)
+            
+            # 添加批次维度
+            image_tensor = image_tensor.unsqueeze(0)
+            
+            return image_tensor, original_slice, specific_slice_idx
         else:
-            raise ValueError(f"指定的切片索引 {specific_slice_idx} 超出范围 [0, {img_array.shape[0] - 1}]")
-    elif slice_selection == 'all':
-        # 处理所有切片
-        slices = []
-        original_slices = []
-        slice_indices = []
+            raise ValueError(
+                f"指定的切片索引 {specific_slice_idx} 超出范围 [0, {img_array.shape[0] - 1}]"
+            )
+    
+    elif slice_selection == 'grid':
+        # 均匀选择切片
+        num_slices = img_array.shape[0]
+        grid_size = grid_layout[0] * grid_layout[1]  # 计算网格大小
         
-        for slice_idx in range(img_array.shape[0]):
-            image_tensor, original_slice = process_single_slice(img_array, slice_idx, transform)
-            slices.append(image_tensor)
-            original_slices.append(original_slice)
-            slice_indices.append(slice_idx)
+        if num_slices >= grid_size:
+            # 如果切片数量足够，均匀选择切片
+            step = max(1, num_slices // grid_size)
+            start = max(0, (num_slices - (grid_size-1) * step) // 2)
+            slice_indices = [start + i * step for i in range(grid_size)]
+            
+            # 确保不超出范围
+            slice_indices = [min(idx, num_slices-1) for idx in slice_indices]
+        else:
+            # 如果切片数量不足，将现有切片重复使用
+            slice_indices = []
+            for i in range(grid_size):
+                slice_idx = (i * num_slices) // grid_size
+                slice_indices.append(slice_idx)
         
-        # 合并所有切片为一个批次
-        batch_tensor = torch.cat(slices, dim=0)
-        return batch_tensor, original_slices, slice_indices
+        # 创建网格图像
+        grid_tensor, grid_img, _ = create_grid_image(img_array, slice_indices, grid_layout)
+        
+        # 调整大小
+        rows, cols = grid_layout
+        transform = transforms.Compose([
+            transforms.Resize((rows*224, cols*224)),
+            transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+        ])
+        grid_tensor = transform(grid_tensor)
+        
+        # 添加批次维度
+        grid_tensor = grid_tensor.unsqueeze(0)
+        
+        return grid_tensor, grid_img, slice_indices
+    
     else:
         raise ValueError(f"不支持的slice_selection值: {slice_selection}")
-
-
-def process_single_slice(img_array, slice_idx, transform):
-    """处理单个切片
-    
-    Args:
-        img_array (numpy.ndarray): 图像数组
-        slice_idx (int): 切片索引
-        transform (callable): 图像变换
-        
-    Returns:
-        tuple: (图像张量, 原始切片数据)
-    """
-    # 获取指定切片
-    slice_img = img_array[slice_idx, :, :]
-    
-    # 图像预处理
-    # 窗宽窗位调整
-    slice_img = np.clip(slice_img, -100, 400)
-    slice_img = (slice_img - (-100)) / 500
-    
-    # 创建3通道图像
-    slice_img_3ch = np.stack([slice_img] * 3, axis=0)
-    
-    # 转为Tensor
-    image_tensor = torch.FloatTensor(slice_img_3ch)
-    
-    # 应用变换
-    image_tensor = transform(image_tensor)
-    
-    # 添加批次维度
-    image_tensor = image_tensor.unsqueeze(0)
-    
-    return image_tensor, slice_img
 
 
 def main():
@@ -144,24 +245,35 @@ def main():
     # 创建输出目录
     os.makedirs(args.output_dir, exist_ok=True)
     
+    # 解析网格布局
+    if args.slice_selection == 'grid':
+        grid_layout = tuple(map(int, args.grid_layout.split(',')))
+        if len(grid_layout) != 2:
+            raise ValueError("grid_layout必须是形如'行,列'的字符串，例如'4,4'")
+    else:
+        grid_layout = (4, 4)  # 默认值
+    
     # 加载和预处理图像
     print(f"加载图像: {args.image_path}")
-    if args.slice_selection == 'all':
-        image_tensors, original_slices, slice_indices = preprocess_image(
+    if args.slice_selection == 'grid':
+        print(f"使用网格模式, 网格大小: {args.grid_size}, 布局: {grid_layout[0]}x{grid_layout[1]}")
+        image_tensor, original_image, slice_indices = preprocess_image(
             args.image_path, 
-            slice_selection=args.slice_selection
+            slice_selection=args.slice_selection,
+            grid_size=args.grid_size,
+            grid_layout=grid_layout
         )
-        print(f"处理了 {len(slice_indices)} 个切片")
+        print(f"选择了 {len(slice_indices)} 个切片进行网格拼接")
     else:
-        image_tensor, original_slice = preprocess_image(
+        image_tensor, original_image, slice_idx = preprocess_image(
             args.image_path, 
             slice_selection=args.slice_selection,
             specific_slice_idx=args.slice_idx
         )
-        image_tensors = image_tensor
-        original_slices = [original_slice]
-        slice_indices = [args.slice_idx if args.slice_selection == 'specific' 
-                         else image_tensors.shape[0] // 2]
+        if args.slice_selection == 'specific':
+            print(f"使用指定切片: {slice_idx}")
+        else:
+            print(f"使用中间切片: {slice_idx}")
     
     # 创建模型
     print("加载模型...")
@@ -203,10 +315,10 @@ def main():
     print("预测中...")
     with torch.no_grad():
         # 将图像移到相同设备
-        image_tensors = image_tensors.to(device)
+        image_tensor = image_tensor.to(device)
         
         # 获取图像特征
-        image_features = model.encode_image(image_tensors)
+        image_features = model.encode_image(image_tensor)
         
         # 获取所有文本特征
         text_features = model.encode_text(text_labels)
@@ -215,110 +327,79 @@ def main():
         similarity = torch.matmul(image_features, text_features.t())
         
         # 获取最大相似度的索引
-        max_indices = torch.argmax(similarity, dim=1)
+        max_idx = torch.argmax(similarity, dim=1).item()
         
         # 获取相似度分数
-        scores = torch.nn.functional.softmax(similarity, dim=1)
+        scores = torch.nn.functional.softmax(similarity[0], dim=0)
     
     # 显示预测结果
-    if args.slice_selection == 'all':
-        # 对所有切片的预测结果进行汇总
-        predictions = []
-        confidences = []
+    predicted_class = text_labels[max_idx]
+    confidence = scores[max_idx].item()
+    
+    print(f"\n预测结果: {predicted_class}")
+    print(f"置信度: {confidence:.4f}\n")
+    
+    # 显示所有分类的置信度
+    print("各分类置信度:")
+    for i, (label, score) in enumerate(zip(text_labels, scores)):
+        print(f"{label}: {score.item():.4f}")
+    
+    # 可视化结果
+    if args.slice_selection == 'grid':
+        # 创建一个大图，展示网格和预测结果
+        plt.figure(figsize=(15, 10))
         
-        for i, (max_idx, score) in enumerate(zip(max_indices, scores)):
-            predicted_class = text_labels[max_idx]
-            confidence = score[max_idx].item()
-            predictions.append(predicted_class)
-            confidences.append(confidence)
-        
-        # 创建汇总表格
-        summary_path = os.path.join(args.output_dir, 'all_slices_predictions.csv')
-        import pandas as pd
-        df = pd.DataFrame({
-            'slice_idx': slice_indices,
-            'prediction': predictions,
-            'confidence': confidences
-        })
-        df.to_csv(summary_path, index=False)
-        print(f"所有切片的预测结果已保存到: {summary_path}")
-        
-        # 找出置信度最高的预测结果
-        best_idx = np.argmax(confidences)
-        best_prediction = predictions[best_idx]
-        best_confidence = confidences[best_idx]
-        best_slice_idx = slice_indices[best_idx]
-        
-        print(f"\n最佳预测结果 (切片 {best_slice_idx}):")
-        print(f"预测: {best_prediction}")
-        print(f"置信度: {best_confidence:.4f}")
-        
-        # 可视化最佳预测结果的切片
-        plt.figure(figsize=(12, 6))
-        
-        # 左侧显示原始图像
+        # 绘制网格图像
         plt.subplot(1, 2, 1)
-        plt.imshow(original_slices[best_idx], cmap='gray')
-        plt.title(f"CT切片 (索引: {best_slice_idx})")
+        plt.imshow(original_image, cmap='gray')
+        plt.title(f"CT切片网格 ({grid_layout[0]}x{grid_layout[1]})")
+        
+        # 在网格上添加切片索引标注
+        rows, cols = grid_layout
+        for i in range(len(slice_indices)):
+            row_idx = i // cols
+            col_idx = i % cols
+            plt.text(
+                col_idx * original_image.shape[1] / cols + 10,
+                row_idx * original_image.shape[0] / rows + 20,
+                f"#{slice_indices[i]}",
+                color='white', fontsize=8, weight='bold'
+            )
+        
         plt.axis('off')
         
         # 右侧显示置信度条形图
         plt.subplot(1, 2, 2)
         y_pos = np.arange(len(text_labels))
-        plt.barh(y_pos, scores[best_idx].cpu().numpy())
+        plt.barh(y_pos, scores.cpu().numpy())
         plt.yticks(y_pos, [label.split('分期')[-1] for label in text_labels])
         plt.xlabel('置信度')
-        plt.title('分类置信度')
+        plt.title(f"分类置信度 (预测: {predicted_class.split('分期')[-1]}, 置信度: {confidence:.4f})")
         
         # 保存和显示
-        result_path = os.path.join(args.output_dir, 'best_prediction_result.png')
+        result_path = os.path.join(args.output_dir, 'grid_prediction_result.png')
         plt.tight_layout()
         plt.savefig(result_path)
-        print(f"最佳结果可视化已保存到: {result_path}")
         
-        # 创建所有切片的预测结果可视化
-        num_slices = min(len(slice_indices), 12)  # 限制为最多12个切片以避免图像过大
-        rows = (num_slices + 2) // 3  # 每行最多3个切片
-        
-        plt.figure(figsize=(15, 5 * rows))
-        for i in range(num_slices):
-            plt.subplot(rows, 3, i + 1)
-            plt.imshow(original_slices[i], cmap='gray')
-            plt.title(f"切片 {slice_indices[i]}: {predictions[i].split('分期')[-1]} ({confidences[i]:.2f})")
-            plt.axis('off')
-        
-        slices_result_path = os.path.join(args.output_dir, 'all_slices_preview.png')
-        plt.tight_layout()
-        plt.savefig(slices_result_path)
-        print(f"所有切片预览已保存到: {slices_result_path}")
+        print(f"\n结果可视化已保存到: {result_path}")
         
     else:
-        # 单一切片的预测结果
-        max_idx = max_indices.item()
-        predicted_class = text_labels[max_idx]
-        confidence = scores[0][max_idx].item()
-        
-        print(f"\n预测结果: {predicted_class}")
-        print(f"置信度: {confidence:.4f}\n")
-        
-        # 显示所有分类的置信度
-        print("各分类置信度:")
-        for i, (label, score) in enumerate(zip(text_labels, scores[0])):
-            print(f"{label}: {score.item():.4f}")
-        
-        # 可视化结果
+        # 单一切片的可视化
         plt.figure(figsize=(12, 6))
         
         # 左侧显示原始图像
         plt.subplot(1, 2, 1)
-        plt.imshow(original_slices[0], cmap='gray')
-        plt.title(f"CT切片 (索引: {slice_indices[0]})")
+        plt.imshow(original_image, cmap='gray')
+        if args.slice_selection == 'specific':
+            plt.title(f"CT切片 (索引: {args.slice_idx})")
+        else:
+            plt.title(f"CT切片 (中间)")
         plt.axis('off')
         
         # 右侧显示置信度条形图
         plt.subplot(1, 2, 2)
         y_pos = np.arange(len(text_labels))
-        plt.barh(y_pos, scores[0].cpu().numpy())
+        plt.barh(y_pos, scores.cpu().numpy())
         plt.yticks(y_pos, [label.split('分期')[-1] for label in text_labels])
         plt.xlabel('置信度')
         plt.title('分类置信度')
