@@ -240,7 +240,7 @@ class ESCCDataset(Dataset):
 def get_data_loaders(
     image_dir, label_file, batch_size=8, train_ratio=0.75, 
     val_ratio=0.15, num_workers=4, slice_selection='middle',
-    grid_size=16, grid_layout=(4, 4)
+    grid_size=16, grid_layout=(4, 4), resize_grid=224
 ):
     """创建训练、验证和测试数据加载器"""
     
@@ -257,7 +257,7 @@ def get_data_loaders(
     if slice_selection == 'grid':
         # 对于网格模式，需要调整输入大小
         transform = transforms.Compose([
-            transforms.Resize((rows*224, cols*224)),
+            transforms.Resize((rows*resize_grid, cols*resize_grid)),
             transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
         ])
     else:

@@ -50,6 +50,8 @@ def parse_args():
                         help='随机种子')
     parser.add_argument('--gpu', action='store_true',
                         help='强制使用GPU，如无可用GPU则报错')
+    parser.add_argument('--resize_grid', type=int, default=224,
+                        help='网格模式下每个切片的目标大小，降低可减少内存使用')
     
     return parser.parse_args()
 
@@ -111,7 +113,7 @@ def create_grid_image(img_array, slice_indices, grid_layout=(4, 4)):
     return torch.FloatTensor(grid_3ch), grid, slice_indices
 
 
-def preprocess_image(image_path, slice_selection='middle', specific_slice_idx=None, grid_size=16, grid_layout=(4, 4)):
+def preprocess_image(image_path, slice_selection='middle', specific_slice_idx=None, grid_size=16, grid_layout=(4, 4), resize_grid=224):
     """预处理NRRD图像
     
     Args:
@@ -120,6 +122,7 @@ def preprocess_image(image_path, slice_selection='middle', specific_slice_idx=No
         specific_slice_idx (int, optional): 当slice_selection为'specific'时的切片索引
         grid_size (int): 'grid'模式下要选择的切片数量
         grid_layout (tuple): 'grid'模式下的网格布局 (行, 列)
+        resize_grid (int): 网格模式下每个切片的目标大小
         
     Returns:
         tuple: (图像张量, 原始切片数据, 切片索引列表)
@@ -221,7 +224,7 @@ def preprocess_image(image_path, slice_selection='middle', specific_slice_idx=No
         # 调整大小
         rows, cols = grid_layout
         transform = transforms.Compose([
-            transforms.Resize((rows*224, cols*224)),
+            transforms.Resize((rows*resize_grid, cols*resize_grid)),
             transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
         ])
         grid_tensor = transform(grid_tensor)
@@ -261,14 +264,16 @@ def main():
             args.image_path, 
             slice_selection=args.slice_selection,
             grid_size=args.grid_size,
-            grid_layout=grid_layout
+            grid_layout=grid_layout,
+            resize_grid=args.resize_grid
         )
         print(f"选择了 {len(slice_indices)} 个切片进行网格拼接")
     else:
         image_tensor, original_image, slice_idx = preprocess_image(
             args.image_path, 
             slice_selection=args.slice_selection,
-            specific_slice_idx=args.slice_idx
+            specific_slice_idx=args.slice_idx,
+            resize_grid=args.resize_grid
         )
         if args.slice_selection == 'specific':
             print(f"使用指定切片: {slice_idx}")

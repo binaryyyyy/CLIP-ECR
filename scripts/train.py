@@ -20,7 +20,7 @@ def parse_args():
                         help='NRRD图像文件目录')
     parser.add_argument('--label_file', type=str, default='F:/1_ML/data/table_info.xlsx',
                         help='标签Excel文件路径')
-    parser.add_argument('--batch_size', type=int, default=16,
+    parser.add_argument('--batch_size', type=int, default=4,  # 降低默认批量大小
                         help='批量大小')
     parser.add_argument('--num_workers', type=int, default=4,
                         help='数据加载器工作进程数')
@@ -57,6 +57,11 @@ def parse_args():
                         help='随机种子')
     parser.add_argument('--gpu', action='store_true', 
                         help='强制使用GPU，如无可用GPU则报错')
+    # 内存优化选项
+    parser.add_argument('--mixed_precision', action='store_true',
+                        help='使用混合精度训练以减少内存使用')
+    parser.add_argument('--resize_grid', type=int, default=224,
+                        help='网格模式下每个切片的目标大小，降低可减少内存使用')
     
     return parser.parse_args()
 
@@ -79,6 +84,17 @@ def main():
     else:
         grid_layout = (4, 4)  # 默认值
     
+    # 设置PyTorch内存分配器配置以减少内存碎片
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+    
+    # 如果使用grid模式并且批量大小过大，自动减少批量大小
+    if args.slice_selection == 'grid' and args.batch_size > 8:
+        original_batch_size = args.batch_size
+        args.batch_size = min(args.batch_size, 4)  # 网格模式下限制最大批量大小
+        print(f"警告：网格模式下批量大小 {original_batch_size} 可能过大，已自动调整为 {args.batch_size}")
+    
     # 获取数据加载器
     print("加载数据...")
     print(f"切片选择模式: {args.slice_selection}")
@@ -92,7 +108,8 @@ def main():
         num_workers=args.num_workers,
         slice_selection=args.slice_selection,
         grid_size=args.grid_size,
-        grid_layout=grid_layout
+        grid_layout=grid_layout,
+        resize_grid=args.resize_grid
     )
     print(f"数据加载完成。训练集: {len(train_loader.dataset)}个样本, "
           f"验证集: {len(val_loader.dataset)}个样本, "
@@ -114,19 +131,31 @@ def main():
         learning_rate=args.lr,
         weight_decay=args.weight_decay,
         save_dir=args.save_dir,
-        force_gpu=args.gpu
+        force_gpu=args.gpu,
+        use_mixed_precision=args.mixed_precision  # 添加混合精度选项
     )
     
     # 开始训练
     print(f"开始训练，总共{args.epochs}个epochs...")
-    history = trainer.train(
-        train_loader=train_loader,
-        val_loader=val_loader,
-        num_epochs=args.epochs,
-        save_best=True
-    )
-    
-    print(f"训练完成！最佳验证损失: {history['best_val_loss']:.4f}")
+    try:
+        history = trainer.train(
+            train_loader=train_loader,
+            val_loader=val_loader,
+            num_epochs=args.epochs,
+            save_best=True
+        )
+        
+        print(f"训练完成！最佳验证损失: {history['best_val_loss']:.4f}")
+    except RuntimeError as e:
+        if 'CUDA out of memory' in str(e):
+            print("\n错误：GPU内存不足！")
+            print("请尝试以下解决方案：")
+            print("1. 减小批量大小 (--batch_size)")
+            print("2. 使用更小的网格布局 (--grid_layout 2,2)")
+            print("3. 启用混合精度训练 (--mixed_precision)")
+            print("4. 减小每个切片的尺寸 (--resize_grid 112)")
+            print("5. 使用内存较多的GPU或切换到CPU训练\n")
+        raise e
     
     # 可以在这里添加测试代码
     print("训练完成.")

@@ -34,7 +34,7 @@ pip install -r requirements.txt
 python scripts/train.py --image_dir path/to/images --label_file path/to/labels.xlsx
 
 # 使用网格拼接切片进行训练
-python scripts/train.py --image_dir C:/Users/vipuser/Downloads/image --label_file C:/Users/vipuser/Downloads/table_info.xlsx --slice_selection grid
+python scripts/train.py --image_dir C:/Users/vipuser/Downloads/image --label_file C:/Users/vipuser/Downloads/table_info.xlsx --slice_selection grid --mixed_precision
 ```
 
 ### 评估模型

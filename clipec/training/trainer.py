@@ -16,7 +16,8 @@ class CLIPTrainer:
         learning_rate=5e-4,
         weight_decay=5e-5,
         save_dir="checkpoints",
-        force_gpu=True
+        force_gpu=True,
+        use_mixed_precision=False  # 添加混合精度训练选项
     ):
         """
         初始化训练器
@@ -27,6 +28,7 @@ class CLIPTrainer:
             weight_decay (float): 权重衰减
             save_dir (str): 保存模型的目录
             force_gpu (bool): 是否强制使用GPU
+            use_mixed_precision (bool): 是否使用混合精度训练
         """
         self.model = model
         self.device = get_device(force_gpu=force_gpu)
@@ -51,6 +53,12 @@ class CLIPTrainer:
             T_max=10,
             eta_min=1e-5  # 提高最小学习率
         )
+        
+        # 混合精度训练设置
+        self.use_mixed_precision = use_mixed_precision
+        if use_mixed_precision and torch.cuda.is_available():
+            self.scaler = torch.cuda.amp.GradScaler()
+            print("已启用混合精度训练")
         
         # 保存目录
         self.save_dir = save_dir
@@ -125,18 +133,24 @@ class CLIPTrainer:
                     texts = texts * (images.size(0) // len(texts) + 1)
                 texts = texts[:images.size(0)]
             
-            # 前向传播
-            # nn.Module 基类实现了 __call__ 方法，使得我们可以直接调用模型对象（如 model(input)）
-            # 因此，可以直接调用 self.model(images, texts) 来调用forward方法
-            _, _, similarity = self.model(images, texts)
-            
-            # 计算损失
-            loss = self.model.compute_loss(similarity)
-            
-            # 反向传播和优化
+            # 前向传播 - 使用混合精度训练
             self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
+            
+            if self.use_mixed_precision and torch.cuda.is_available():
+                with torch.cuda.amp.autocast():
+                    _, _, similarity = self.model(images, texts)
+                    loss = self.model.compute_loss(similarity)
+                
+                # 使用scaler进行反向传播和优化
+                self.scaler.scale(loss).backward()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
+                # 标准训练过程
+                _, _, similarity = self.model(images, texts)
+                loss = self.model.compute_loss(similarity)
+                loss.backward()
+                self.optimizer.step()
             
             # 更新进度条
             current_loss = loss.item()
@@ -198,7 +212,7 @@ class CLIPTrainer:
                         texts = texts * (images.size(0) // len(texts) + 1)
                     texts = texts[:images.size(0)]
                 
-                # 前向传播
+                # 前向传播（验证时不需要使用混合精度）
                 _, _, similarity = self.model(images, texts)
                 
                 # 计算损失

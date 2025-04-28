@@ -57,6 +57,8 @@ def parse_args():
                         help='随机种子')
     parser.add_argument('--gpu', action='store_true',
                         help='强制使用GPU，如无可用GPU则报错')
+    parser.add_argument('--resize_grid', type=int, default=224,
+                        help='网格模式下每个切片的目标大小，降低可减少内存使用')
     
     return parser.parse_args()
 
@@ -184,7 +186,8 @@ def main():
         num_workers=args.num_workers,
         slice_selection=args.slice_selection,
         grid_size=args.grid_size,
-        grid_layout=grid_layout
+        grid_layout=grid_layout,
+        resize_grid=args.resize_grid
     )
     print(f"测试集: {len(test_loader.dataset)}个样本")
     
