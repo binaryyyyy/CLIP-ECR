@@ -29,6 +29,9 @@ def parse_args():
                         help='批量大小')
     parser.add_argument('--num_workers', type=int, default=4,
                         help='数据加载器工作进程数')
+    parser.add_argument('--slice_selection', type=str, default='middle',
+                        choices=['middle', 'all'],
+                        help='CT切片选择方式: middle-仅中间切片, all-所有切片')
     
     # 模型相关参数
     parser.add_argument('--model_path', type=str, required=True,
@@ -77,7 +80,7 @@ def plot_confusion_matrix(y_true, y_pred, classes, output_path):
     plt.close()
 
 
-def evaluate_model(model, data_loader, text_labels, output_dir, force_gpu=False):
+def evaluate_model(model, data_loader, text_labels, output_dir, slice_selection='middle', force_gpu=False):
     """评估模型性能"""
     # 创建训练器（只用于预测，不进行训练）
     trainer = CLIPTrainer(model=model, save_dir=output_dir, force_gpu=force_gpu)
@@ -88,6 +91,8 @@ def evaluate_model(model, data_loader, text_labels, output_dir, force_gpu=False)
     # 获取AJCC8th标签用于评估
     y_true = []
     y_pred = []
+    patient_list = []
+    slice_indices = []
     
     for i, label_dict in enumerate(true_labels):
         # 如果有AJCC8th标签
@@ -100,6 +105,22 @@ def evaluate_model(model, data_loader, text_labels, output_dir, force_gpu=False)
             pred_text = predictions[i]
             pred_label = pred_text.split('分期')[-1] if '分期' in pred_text else pred_text
             y_pred.append(pred_label)
+            
+            # 保存患者ID
+            patient_list.append(patient_ids[i])
+            
+            # 如果是all模式，记录切片索引
+            if slice_selection == 'all' and hasattr(data_loader.dataset, 'dataset'):
+                # 对于Subset类型的dataset，需要获取原始dataset
+                orig_dataset = data_loader.dataset.dataset
+                idx = data_loader.dataset.indices[i]
+                if hasattr(orig_dataset, 'slices_info'):
+                    _, _, slice_idx = orig_dataset.slices_info[idx]
+                    slice_indices.append(slice_idx)
+                else:
+                    slice_indices.append(None)
+            else:
+                slice_indices.append(None)
     
     # 计算准确率
     accuracy = accuracy_score(y_true, y_pred)
@@ -127,11 +148,15 @@ def evaluate_model(model, data_loader, text_labels, output_dir, force_gpu=False)
     
     # 创建结果DataFrame
     results_df = pd.DataFrame({
-        'patient_id': patient_ids[:len(y_true)],
+        'patient_id': patient_list,
         'true_label': y_true,
         'predicted_label': y_pred,
         'correct': [t == p for t, p in zip(y_true, y_pred)]
     })
+    
+    # 如果是all模式，添加切片索引
+    if slice_selection == 'all':
+        results_df['slice_idx'] = slice_indices
     
     # 保存结果到CSV
     results_path = os.path.join(output_dir, 'evaluation_results.csv')
@@ -153,11 +178,13 @@ def main():
     
     # 获取数据加载器
     print("加载数据...")
+    print(f"切片选择模式: {args.slice_selection}")
     _, _, test_loader, text_labels = get_data_loaders(
         args.image_dir,
         args.label_file,
         batch_size=args.batch_size,
-        num_workers=args.num_workers
+        num_workers=args.num_workers,
+        slice_selection=args.slice_selection
     )
     print(f"测试集: {len(test_loader.dataset)}个样本")
     
@@ -187,6 +214,7 @@ def main():
         data_loader=test_loader,
         text_labels=test_text_labels,
         output_dir=args.output_dir,
+        slice_selection=args.slice_selection,
         force_gpu=args.gpu
     )
     

@@ -24,6 +24,9 @@ def parse_args():
                         help='批量大小')
     parser.add_argument('--num_workers', type=int, default=4,
                         help='数据加载器工作进程数')
+    parser.add_argument('--slice_selection', type=str, default='middle',
+                        choices=['middle', 'all'],
+                        help='CT切片选择方式: middle-仅中间切片, all-所有切片')
     
     # 模型相关参数
     parser.add_argument('--image_encoder', type=str, default='resnet50',
@@ -66,11 +69,13 @@ def main():
     
     # 获取数据加载器
     print("加载数据...")
+    print(f"切片选择模式: {args.slice_selection}")
     train_loader, val_loader, test_loader, text_labels = get_data_loaders(
         args.image_dir,
         args.label_file,
         batch_size=args.batch_size,
-        num_workers=args.num_workers
+        num_workers=args.num_workers,
+        slice_selection=args.slice_selection
     )
     print(f"数据加载完成。训练集: {len(train_loader.dataset)}个样本, "
           f"验证集: {len(val_loader.dataset)}个样本, "
