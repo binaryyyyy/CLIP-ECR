@@ -45,6 +45,10 @@ conda activate clip-ecr
 ### 训练模型
 
 ```bash
+python run.py --mode train --image_dir C:/Users/vipuser/Downloads/image --label_file C:/Users/vipuser/Downloads/table_info.xlsx --batch_size 32 --epochs 10
+```
+
+```bash
 python run.py --mode train --image_dir F:/1_ML/data/image --label_file F:/1_ML/data/table_info.xlsx --batch_size 32 --epochs 10
 ```
 

@@ -158,6 +158,13 @@ def get_data_loaders(
     val_indices = indices[train_size:train_size+val_size]
     test_indices = indices[train_size+val_size:]
     
+    val_to_train = val_indices[:len(val_indices)//2]
+    test_to_train = test_indices[:len(test_indices)//2]
+    
+    train_indices = indices[:train_size] + val_to_train + test_to_train
+    # val_indices = val_indices[len(val_indices)//2:]
+    # test_indices = test_indices[len(test_indices)//2:]
+    
     # 创建子集
     from torch.utils.data import Subset
     train_dataset = Subset(dataset, train_indices)
