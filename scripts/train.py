@@ -39,17 +39,17 @@ def parse_args():
     #                     help='文本编码器类型')
     parser.add_argument('--text_encoder', type=str, default='transformer',
                         help='文本编码器类型')
-    parser.add_argument('--embedding_dim', type=int, default=1024,
+    parser.add_argument('--embedding_dim', type=int, default=512,
                         help='嵌入维度')
-    parser.add_argument('--temperature', type=float, default=0.1,
+    parser.add_argument('--temperature', type=float, default=0.07,
                         help='温度系数')
     
     # 训练相关参数
-    parser.add_argument('--lr', type=float, default=5e-4,
+    parser.add_argument('--lr', type=float, default=1e-3,
                         help='学习率')
-    parser.add_argument('--weight_decay', type=float, default=5e-5,
+    parser.add_argument('--weight_decay', type=float, default=1e-4,
                         help='权重衰减')
-    parser.add_argument('--epochs', type=int, default=10,
+    parser.add_argument('--epochs', type=int, default=30,
                         help='训练轮数')
     parser.add_argument('--save_dir', type=str, default='CLIP-ECR/checkpoints',
                         help='模型保存目录')
@@ -62,6 +62,15 @@ def parse_args():
                         help='使用混合精度训练以减少内存使用')
     parser.add_argument('--resize_grid', type=int, default=224,
                         help='网格模式下每个切片的目标大小，降低可减少内存使用')
+    # 数据增强选项
+    parser.add_argument('--data_augmentation', action='store_true',
+                        help='启用数据增强')
+    parser.add_argument('--rotation', type=int, default=10,
+                        help='随机旋转角度范围')
+    parser.add_argument('--brightness', type=float, default=0.1,
+                        help='随机亮度调整范围')
+    parser.add_argument('--contrast', type=float, default=0.1,
+                        help='随机对比度调整范围')
     
     return parser.parse_args()
 
@@ -101,6 +110,10 @@ def main():
     if args.slice_selection == 'grid':
         print(f"网格大小: {args.grid_size}, 网格布局: {grid_layout}")
     
+    if args.data_augmentation:
+        print(f"已启用数据增强: 旋转±{args.rotation}度, "
+              f"亮度±{args.brightness}, 对比度±{args.contrast}")
+    
     train_loader, val_loader, test_loader, text_labels = get_data_loaders(
         args.image_dir,
         args.label_file,
@@ -109,7 +122,11 @@ def main():
         slice_selection=args.slice_selection,
         grid_size=args.grid_size,
         grid_layout=grid_layout,
-        resize_grid=args.resize_grid
+        resize_grid=args.resize_grid,
+        data_augmentation=args.data_augmentation,
+        rotation=args.rotation,
+        brightness=args.brightness,
+        contrast=args.contrast
     )
     print(f"数据加载完成。训练集: {len(train_loader.dataset)}个样本, "
           f"验证集: {len(val_loader.dataset)}个样本, "

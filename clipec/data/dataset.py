@@ -240,7 +240,8 @@ class ESCCDataset(Dataset):
 def get_data_loaders(
     image_dir, label_file, batch_size=8, train_ratio=0.75, 
     val_ratio=0.15, num_workers=4, slice_selection='middle',
-    grid_size=16, grid_layout=(4, 4), resize_grid=224
+    grid_size=16, grid_layout=(4, 4), resize_grid=224,
+    data_augmentation=False, rotation=10, brightness=0.1, contrast=0.1
 ):
     """创建训练、验证和测试数据加载器"""
     
@@ -256,32 +257,84 @@ def get_data_loaders(
     # 定义数据变换
     if slice_selection == 'grid':
         # 对于网格模式，需要调整输入大小
-        transform = transforms.Compose([
+        if data_augmentation:
+            # 带数据增强的变换
+            train_transform = transforms.Compose([
+                transforms.Resize((rows*resize_grid, cols*resize_grid)),
+                transforms.RandomAffine(degrees=rotation, translate=(0.05, 0.05)),
+                transforms.ColorJitter(brightness=brightness, contrast=contrast),
+                transforms.RandomHorizontalFlip(),
+                transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+            ])
+        else:
+            # 不带数据增强的变换
+            train_transform = transforms.Compose([
+                transforms.Resize((rows*resize_grid, cols*resize_grid)),
+                transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+            ])
+            
+        # 验证和测试集不使用数据增强
+        val_transform = transforms.Compose([
             transforms.Resize((rows*resize_grid, cols*resize_grid)),
             transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
         ])
     else:
-        transform = transforms.Compose([
+        # 对于单切片模式的变换
+        if data_augmentation:
+            train_transform = transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.RandomAffine(degrees=rotation, translate=(0.05, 0.05)),
+                transforms.ColorJitter(brightness=brightness, contrast=contrast),
+                transforms.RandomHorizontalFlip(),
+                transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+            ])
+        else:
+            train_transform = transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+            ])
+            
+        val_transform = transforms.Compose([
             transforms.Resize((224, 224)),
             transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
         ])
     
-    # 创建数据集
-    dataset = ESCCDataset(
+    # 创建训练数据集
+    train_dataset = ESCCDataset(
         image_dir, 
         label_file, 
-        transform=transform, 
+        transform=train_transform, 
+        slice_selection=slice_selection,
+        grid_size=grid_size,
+        grid_layout=grid_layout_tuple
+    )
+    
+    # 创建验证和测试数据集
+    val_dataset = ESCCDataset(
+        image_dir, 
+        label_file, 
+        transform=val_transform, 
+        slice_selection=slice_selection,
+        grid_size=grid_size,
+        grid_layout=grid_layout_tuple
+    )
+    
+    test_dataset = ESCCDataset(
+        image_dir, 
+        label_file, 
+        transform=val_transform, 
         slice_selection=slice_selection,
         grid_size=grid_size,
         grid_layout=grid_layout_tuple
     )
     
     # 数据集大小
-    dataset_size = len(dataset)
+    dataset_size = len(train_dataset)
     
     # 计算分割点
     train_size = int(train_ratio * dataset_size)
     val_size = int(val_ratio * dataset_size)
+    test_size = dataset_size - train_size - val_size
     
     # 分割数据集
     indices = list(range(dataset_size))
@@ -291,28 +344,26 @@ def get_data_loaders(
     val_indices = indices[train_size:train_size+val_size]
     test_indices = indices[train_size+val_size:]
     
-    val_to_train = val_indices[:len(val_indices)//2]
-    test_to_train = test_indices[:len(test_indices)//2]
-    
-    train_indices = indices[:train_size] + val_to_train + test_to_train
-    
     # 创建子集
-    train_dataset = Subset(dataset, train_indices)
-    val_dataset = Subset(dataset, val_indices)
-    test_dataset = Subset(dataset, test_indices)
+    train_subset = Subset(train_dataset, train_indices)
+    val_subset = Subset(val_dataset, val_indices)
+    test_subset = Subset(test_dataset, test_indices)
+    
+    print(f"数据集分割: 训练集 {len(train_subset)}个样本, "
+          f"验证集 {len(val_subset)}个样本, 测试集 {len(test_subset)}个样本")
     
     # 创建数据加载器
     train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, 
+        train_subset, batch_size=batch_size, 
         shuffle=True, num_workers=num_workers
     )
     val_loader = DataLoader(
-        val_dataset, batch_size=batch_size, 
+        val_subset, batch_size=batch_size, 
         shuffle=False, num_workers=num_workers
     )
     test_loader = DataLoader(
-        test_dataset, batch_size=batch_size, 
+        test_subset, batch_size=batch_size, 
         shuffle=False, num_workers=num_workers
     )
     
-    return train_loader, val_loader, test_loader, dataset.text_labels 
+    return train_loader, val_loader, test_loader, train_dataset.text_labels 

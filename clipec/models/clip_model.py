@@ -32,12 +32,17 @@ class CLIPModel(nn.Module):
         
         # 初始化图像编码器
         if image_encoder_name == "resnet50":
-            # 加载预训练的ResNet，移除最后的分类层
-            # TODO: 更改使用weights参数 指定特定的权重
+            # 加载预训练的ResNet50
+            self.image_encoder = resnet50(pretrained=True)
+            # 修改最后的全连接层以输出所需维度的特征
+            in_features = self.image_encoder.fc.in_features
+            self.image_encoder.fc = nn.Linear(in_features, embedding_dim)
+        elif image_encoder_name == "resnet152":
+            # 加载预训练的ResNet152
             self.image_encoder = resnet152(pretrained=True)
             # 修改最后的全连接层以输出所需维度的特征
-            in_features = self.image_encoder.fc.in_features # 获取全连接层的输入维度
-            self.image_encoder.fc = nn.Linear(in_features, embedding_dim) # 修改全连接层 embedding_dim：输出维度（向量化维度）
+            in_features = self.image_encoder.fc.in_features
+            self.image_encoder.fc = nn.Linear(in_features, embedding_dim)
         else:
             raise ValueError(f"不支持的图像编码器: {image_encoder_name}")
         
@@ -122,14 +127,16 @@ class CLIPModel(nn.Module):
         if labels is None:
             labels = torch.arange(batch_size, device=similarity.device)
         
+        # 增加温度系数，使得模型更容易区分样本
+        similarity = similarity / self.temperature
+        
         # 图像到文本的损失（每行应该最大值在对应的索引）
-        image_loss = F.cross_entropy(similarity, labels)
+        image_loss = torch.nn.functional.cross_entropy(similarity, labels)
         
         # 文本到图像的损失（每列应该最大值在对应的索引）
-        text_loss = F.cross_entropy(similarity.t(), labels)
+        text_loss = torch.nn.functional.cross_entropy(similarity.t(), labels)
         
-        # 加权总损失，增加图像到文本的权重
-        # 修改损失权重，强调图像→文本的匹配
-        total_loss = (0.7 * image_loss + 0.3 * text_loss)
+        # 加权总损失
+        total_loss = (image_loss + text_loss) / 2
         
         return total_loss 

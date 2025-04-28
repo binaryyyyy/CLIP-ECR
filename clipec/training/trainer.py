@@ -46,23 +46,25 @@ class CLIPTrainer:
             weight_decay=weight_decay
         )
         
-        # 学习率调度器
-        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
+        # 学习率调度器 - 使用更激进的学习率衰减
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer,
-            # 调整为与epoch数匹配，以便在整个训练过程中有更好的学习率变化
-            T_max=10,
-            eta_min=1e-5  # 提高最小学习率
+            mode='min',
+            factor=0.5,  # 每次减半
+            patience=2,   # 2个epoch没改善就降低学习率
+            verbose=True
         )
         
         # 混合精度训练设置
         self.use_mixed_precision = use_mixed_precision
         if use_mixed_precision and torch.cuda.is_available():
-            self.scaler = torch.cuda.amp.GradScaler()
+            from torch.cuda.amp import GradScaler
+            self.scaler = GradScaler()
             print("已启用混合精度训练")
         
         # 保存目录
         self.save_dir = save_dir
-        os.makedirs(save_dir, exist_ok=True) # exist_ok=True 如果存在 不执行创建 跳过
+        os.makedirs(save_dir, exist_ok=True)  # exist_ok=True 如果存在不执行创建跳过
         
         # 训练记录
         self.train_losses = []
@@ -244,7 +246,15 @@ class CLIPTrainer:
         patience = 5
         patience_counter = 0
         
+        # 记录学习率
+        lr_history = []
+        
         for epoch in range(1, num_epochs + 1):
+            # 当前学习率
+            current_lr = self.optimizer.param_groups[0]['lr']
+            lr_history.append(current_lr)
+            print(f"当前学习率: {current_lr:.6f}")
+            
             # 训练
             train_loss = self.train_epoch(train_loader, epoch)
             print(f"Epoch {epoch}/{num_epochs} - Train Loss: {train_loss:.4f}")
@@ -254,6 +264,9 @@ class CLIPTrainer:
             print(
                 f"Epoch {epoch}/{num_epochs} - Validation Loss: {val_loss:.4f}"
             )
+            
+            # 更新学习率调度器
+            self.scheduler.step(val_loss)
             
             # 保存模型
             if save_best and val_loss < self.best_val_loss:
@@ -291,25 +304,39 @@ class CLIPTrainer:
                 print(f"保存checkpoint到 {save_path}")
         
         # 绘制训练曲线
-        self.plot_training_curves()
+        self.plot_training_curves(lr_history)
         
         # 返回训练历史
         return {
             'train_losses': self.train_losses,
             'val_losses': self.val_losses,
-            'best_val_loss': self.best_val_loss
+            'best_val_loss': self.best_val_loss,
+            'lr_history': lr_history
         }
     
-    def plot_training_curves(self):
+    def plot_training_curves(self, lr_history):
         """绘制训练和验证损失曲线"""
-        plt.figure(figsize=(10, 5))
-        plt.plot(self.train_losses, label='Training Loss')
-        plt.plot(self.val_losses, label='Validation Loss')
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
-        plt.title('Training and Validation Loss')
-        plt.legend()
-        plt.grid(True)
+        # 创建两个子图
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+        
+        # 绘制损失曲线
+        ax1.plot(self.train_losses, label='Training Loss', marker='o')
+        ax1.plot(self.val_losses, label='Validation Loss', marker='s')
+        ax1.set_xlabel('Epoch')
+        ax1.set_ylabel('Loss')
+        ax1.set_title('Training and Validation Loss')
+        ax1.legend()
+        ax1.grid(True)
+        
+        # 绘制学习率曲线
+        ax2.plot(lr_history, label='Learning Rate', marker='x', color='green')
+        ax2.set_xlabel('Epoch')
+        ax2.set_ylabel('Learning Rate')
+        ax2.set_title('Learning Rate Schedule')
+        ax2.set_yscale('log')  # 使用对数刻度更好地显示学习率变化
+        ax2.grid(True)
+        
+        plt.tight_layout()
         
         # 保存图像
         curves_path = os.path.join(self.save_dir, "training_curves.png")
