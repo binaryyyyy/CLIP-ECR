@@ -62,7 +62,7 @@ class CLIPTrainer:
         if use_mixed_precision and torch.cuda.is_available():
             # 使用最新的API
             from torch.amp import GradScaler, autocast
-            self.scaler = GradScaler()
+            self.scaler = GradScaler('cuda')
             self.autocast = autocast(device_type='cuda')
             print("已启用混合精度训练")
         
@@ -164,8 +164,8 @@ class CLIPTrainer:
             # 更新进度条 在尾部显示当前损失
             progress_bar.set_postfix({"loss": f"{current_loss:.4f}"})
         
-        # 注意：ReduceLROnPlateau的step()方法需要在验证后调用，
-        # 所以在这里移除scheduler.step()调用
+        # 删除 ReduceLROnPlateau 的 step() 调用，因为它需要在验证后调用
+        # self.scheduler.step() 已移至 train() 方法中
         
         avg_loss = total_loss / len(data_loader)
         self.train_losses.append(avg_loss)
