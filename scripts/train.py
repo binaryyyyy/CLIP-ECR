@@ -28,7 +28,9 @@ def parse_args():
     # 模型相关参数
     parser.add_argument('--image_encoder', type=str, default='resnet50',
                         help='图像编码器类型')
-    parser.add_argument('--text_encoder', type=str, default='simple',
+    # parser.add_argument('--text_encoder', type=str, default='simple',
+    #                     help='文本编码器类型')
+    parser.add_argument('--text_encoder', type=str, default='transformer',
                         help='文本编码器类型')
     parser.add_argument('--embedding_dim', type=int, default=1024,
                         help='嵌入维度')
