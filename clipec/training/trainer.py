@@ -51,9 +51,11 @@ class CLIPTrainer:
             self.optimizer,
             mode='min',
             factor=0.5,  # 每次减半
-            patience=2,   # 2个epoch没改善就降低学习率
-            verbose=True
+            patience=2   # 2个epoch没改善就降低学习率
         )
+        
+        # 打印初始学习率
+        print(f"初始学习率: {self.optimizer.param_groups[0]['lr']}")
         
         # 混合精度训练设置
         self.use_mixed_precision = use_mixed_precision
@@ -92,7 +94,7 @@ class CLIPTrainer:
             # 从 batch_labels 字典中获取 'AJCC8th' 标签列表
             # batch_labels 的结构是 {'label_name': [label1, label2, ...]}
             ajcc_labels = batch_labels.get('AJCC8th', [])
-            num_samples = images.size(0) # 获取批次中的样本数量
+            num_samples = images.size(0)  # 获取批次中的样本数量
 
             # 确保 ajcc_labels 列表长度与批次大小一致
             # 如果标签列表长度不足，用默认值（例如空字符串）填充
@@ -266,7 +268,13 @@ class CLIPTrainer:
             )
             
             # 更新学习率调度器
+            old_lr = self.optimizer.param_groups[0]['lr']
             self.scheduler.step(val_loss)
+            new_lr = self.optimizer.param_groups[0]['lr']
+            
+            # 如果学习率改变，打印日志
+            if old_lr != new_lr:
+                print(f"学习率从 {old_lr:.6f} 降低到 {new_lr:.6f}")
             
             # 保存模型
             if save_best and val_loss < self.best_val_loss:
