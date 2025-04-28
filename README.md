@@ -33,7 +33,7 @@ pip install -r requirements.txt
 python scripts/train.py --image_dir path/to/images --label_file path/to/labels.xlsx
 
 # 使用所有切片进行训练
-python scripts/train.py --image_dir path/to/images --label_file path/to/labels.xlsx --slice_selection all
+python scripts/train.py --image_dir C:/Users/vipuser/Downloads/image --label_file C:/Users/vipuser/Downloads/table_info.xlsx --slice_selection all
 ```
 
 ### 评估模型
