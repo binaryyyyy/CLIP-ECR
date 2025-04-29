@@ -43,7 +43,7 @@ def parse_args():
                         help='模型检查点路径')
     parser.add_argument('--image_encoder', type=str, default='resnet50',
                         help='图像编码器类型')
-    parser.add_argument('--text_encoder', type=str, default='simple',
+    parser.add_argument('--text_encoder', type=str, default='transformer',
                         help='文本编码器类型')
     parser.add_argument('--embedding_dim', type=int, default=512,
                         help='嵌入维度')
@@ -196,7 +196,7 @@ def main():
     model = CLIPModel(
         image_encoder_name=args.image_encoder,
         text_encoder_name=args.text_encoder,
-        embedding_dim=1024,
+        embedding_dim=args.embedding_dim,
         temperature=args.temperature
     )
     
