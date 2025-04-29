@@ -196,7 +196,7 @@ def main():
     model = CLIPModel(
         image_encoder_name=args.image_encoder,
         text_encoder_name=args.text_encoder,
-        embedding_dim=args.embedding_dim,
+        embedding_dim=1024,
         temperature=args.temperature
     )
     
